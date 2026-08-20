@@ -47,6 +47,7 @@ public class PrestoFileSystemCache
     public static final String PRESTO_GCS_OAUTH_ACCESS_TOKEN_KEY = "presto.gcs.oauth-access-token";
     public static final String PRESTO_S3_IAM_ROLE = "presto.hive.s3.iam-role";
     public static final String PRESTO_S3_ACCESS_KEY = "presto.s3.access-key";
+    public static final String PRESTO_CACHE_KEY_QUALIFIER = "presto.fs.cache.key-qualifier";
 
     private final AtomicLong unique = new AtomicLong();
     private final Map<FileSystemKey, FileSystemHolder> map = new HashMap<>();
@@ -82,7 +83,7 @@ public class PrestoFileSystemCache
             throws IOException
     {
         UserGroupInformation userGroupInformation = UserGroupInformation.getCurrentUser();
-        FileSystemKey key = createFileSystemKey(uri, userGroupInformation, unique);
+        FileSystemKey key = createFileSystemKey(uri, userGroupInformation, conf, unique);
         Set<?> privateCredentials = getPrivateCredentials(userGroupInformation);
 
         FileSystemHolder fileSystemHolder = map.get(key);
@@ -213,10 +214,14 @@ public class PrestoFileSystemCache
         throw new UnsupportedOperationException();
     }
 
-    private static FileSystemKey createFileSystemKey(URI uri, UserGroupInformation userGroupInformation, long unique)
+    private static FileSystemKey createFileSystemKey(URI uri,
+                                                     UserGroupInformation userGroupInformation,
+                                                     Configuration conf,
+                                                     long unique)
     {
         String scheme = nullToEmpty(uri.getScheme()).toLowerCase(ENGLISH);
         String authority = nullToEmpty(uri.getAuthority()).toLowerCase(ENGLISH);
+        String cacheKeyQualifier = nullToEmpty(conf.get(PRESTO_CACHE_KEY_QUALIFIER));
         String realUser;
         String proxyUser;
         AuthenticationMethod authenticationMethod = userGroupInformation.getAuthenticationMethod();
@@ -233,7 +238,7 @@ public class PrestoFileSystemCache
             default:
                 throw new IllegalArgumentException("Unsupported authentication method: " + authenticationMethod);
         }
-        return new FileSystemKey(scheme, authority, unique, realUser, proxyUser);
+        return new FileSystemKey(scheme, authority, unique, realUser, proxyUser, cacheKeyQualifier);
     }
 
     private static Set<?> getPrivateCredentials(UserGroupInformation userGroupInformation)
@@ -264,11 +269,13 @@ public class PrestoFileSystemCache
         private final long unique;
         private final String realUser;
         private final String proxyUser;
+        private final String cacheKeyQualifier;
 
-        public FileSystemKey(String scheme, String authority, long unique, String realUser, String proxyUser)
+        public FileSystemKey(String scheme, String authority, long unique, String realUser, String proxyUser, String cacheKeyQualifier)
         {
             this.scheme = requireNonNull(scheme, "scheme is null");
             this.authority = requireNonNull(authority, "authority is null");
+            this.cacheKeyQualifier = requireNonNull(cacheKeyQualifier, "cacheKeyQualifier is null");
             this.unique = unique;
             this.realUser = requireNonNull(realUser, "realUser");
             this.proxyUser = proxyUser;
@@ -288,13 +295,14 @@ public class PrestoFileSystemCache
                     Objects.equals(authority, that.authority) &&
                     Objects.equals(unique, that.unique) &&
                     Objects.equals(realUser, that.realUser) &&
-                    Objects.equals(proxyUser, that.proxyUser);
+                    Objects.equals(proxyUser, that.proxyUser) &&
+                    Objects.equals(cacheKeyQualifier, that.cacheKeyQualifier);
         }
 
         @Override
         public int hashCode()
         {
-            return Objects.hash(scheme, authority, unique, realUser, proxyUser);
+            return Objects.hash(scheme, authority, unique, realUser, proxyUser, cacheKeyQualifier);
         }
 
         @Override
@@ -306,6 +314,7 @@ public class PrestoFileSystemCache
                     .add("unique", unique)
                     .add("realUser", realUser)
                     .add("proxyUser", proxyUser)
+                    .add("cacheKeyQualifier", cacheKeyQualifier)
                     .toString();
         }
     }
